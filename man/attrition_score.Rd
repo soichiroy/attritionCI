@@ -4,7 +4,7 @@
 \alias{attrition_score}
 \title{Estimate Attrition Score}
 \usage{
-attrition_score(formula, varname_treat, data)
+attrition_score(formula, varname_treat, data, cbps)
 }
 \arguments{
 \item{formula}{A formula of the form \code{response ~ x1 + x2}.}
@@ -12,6 +12,8 @@ attrition_score(formula, varname_treat, data)
 \item{varname_treat}{A character string of treatment variable name in \code{data}}
 
 \item{data}{A data frame.}
+
+\item{cbps}{A boolean argument if CBPS is used.}
 }
 \description{
 Estimate Attrition Score
