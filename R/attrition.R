@@ -77,6 +77,51 @@ attrition <- function(formula, data, estimator = 'dr', est_ps = FALSE, cbps = TR
   
 }
 
+#' Estimate Bounds for ATE 
+#' @inheritParam attrition
+#' @export
+attrition_bound <- function(formula, data, cbps = TRUE, zeta = c(1, 1.1, 1.2)) {
+  data <- as.data.frame(data)
+  
+  ## check if \code{outcome | treatment}
+  if (length(as.Formula(formula))[1] != 2) {
+    stop('Incorrect formula specifications. See the documentation.')
+  }
+  
+  ## check if all variables in the formula exists in the data 
+  vars <- all.vars(as.Formula(formula))
+  
+  if (!all(vars %in% colnames(data))) {
+    stop("Variable is missing from the data.")
+  }
+  
+  ## obtain formula 
+  fm_outcome <- formula(as.Formula(formula), lhs = 1, rhs = 1)
+  fm_treat   <- formula(as.Formula(formula), lhs = 2, rhs = 1)
+  fm_X       <- formula(as.Formula(formula), lhs = 0, rhs = 1)
+  
+  ## create missing outcome 
+  var_outcome <- vars[1]
+  var_treat   <- vars[2]
+  
+  ## create attrition indicator (R = 1 if observed) 
+  data$R <- R <- as.numeric(!is.na(data[,var_outcome]))
+  
+  ## -------------------------------------- ##
+  ## estimate attrition score 
+  ## -------------------------------------- ##
+  ascore <- attrition_score(update(fm_X, R ~ .), varname_treat = var_treat, 
+                            data = data, cbps)
+  
+  
+  ## -------------------------------------- ##
+  ## Compute bounds 
+  ## -------------------------------------- ##
+  Yobs  <- pull(data, !!sym(var_outcome))
+  bound <- calc_psi(var_treat, R, data, Yobs, ascore, zeta)
+  
+  return(bound)
+}
 
 #' Estimate Attrition Score 
 #' @keywords internal 
@@ -237,4 +282,40 @@ attrition_ipw <- function(var_treat, R, data, Yobs, ascore, ps) {
     statistic = ATE_est / std.err, 
     p.value   = dnorm(ATE_est / std.err)
   )
+}
+
+
+
+
+#' IPW Estimator
+#' @keywords internal
+calc_psi <- function(var_treat, R, data, Yobs, ascore, zeta) {
+  ## treatment vector -------------------------------------
+  D <- data[,var_treat]
+  n <- nrow(data)
+  
+  ## estimate 𝞧(1,1) and 𝞧(1,0) -------------------------
+  use_tr <- D == 1 & R == 1 
+  p11 <- sum(Yobs[use_tr] / ascore[use_tr]) / n  
+  p10 <- sum(Yobs[use_tr] * (1 - ascore[use_tr]) / ascore[use_tr]) / n 
+
+  ## estimate 𝞧(0,1) and 𝞧(0,0) --------------------------
+  use_ct <- D == 0 & R == 1
+  p01 <- sum(Yobs[use_ct] / ascore[use_ct]) / n 
+  p00 <- sum(Yobs[use_ct] * (1 - ascore[use_ct]) / ascore[use_ct]) / n 
+
+  ## estimate bounds for ATE ------------------------------
+  ATE_lb <- (p11 + p10 / zeta) - (p01 + zeta * p00)
+  ATE_ub <- (p11 + zeta * p10) - (p01 + p00 / zeta)
+  
+  
+  ## estimate variance ------------------------------------
+  
+  ## return object 
+  out <- list(
+    psi = c(p11, p10, p01, p00), 
+    lb  = ATE_lb, 
+    ub  = ATE_ub
+  )
+  return(out)
 }
