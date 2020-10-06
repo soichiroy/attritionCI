@@ -296,17 +296,28 @@ calc_psi <- function(var_treat, R, data, Yobs, ascore, zeta) {
   
   ## estimate 𝞧(1,1) and 𝞧(1,0) -------------------------
   use_tr <- D == 1 & R == 1 
-  p11 <- sum(Yobs[use_tr] / ascore[use_tr]) / n  
-  p10 <- sum(Yobs[use_tr] * (1 - ascore[use_tr]) / ascore[use_tr]) / n 
+  n1 <- sum(D == 1)
+  p11 <- sum(Yobs[use_tr] / ascore[use_tr]) / n
+  p10 <- sum(Yobs[use_tr] * (1 - ascore[use_tr]) / ascore[use_tr]) / n
 
   ## estimate 𝞧(0,1) and 𝞧(0,0) --------------------------
   use_ct <- D == 0 & R == 1
-  p01 <- sum(Yobs[use_ct] / ascore[use_ct]) / n 
-  p00 <- sum(Yobs[use_ct] * (1 - ascore[use_ct]) / ascore[use_ct]) / n 
+  n0 <- sum(D == 0)
+  p01 <- sum(Yobs[use_ct] / ascore[use_ct]) / n
+  p00 <- sum(Yobs[use_ct] * (1 - ascore[use_ct]) / ascore[use_ct]) / n
 
   ## estimate bounds for ATE ------------------------------
-  ATE_lb <- (p11 + p10 / zeta) - (p01 + zeta * p00)
-  ATE_ub <- (p11 + zeta * p10) - (p01 + p00 / zeta)
+  ATE_lb <- ATE_ub <- rep(NA, length(zeta))
+  for (z in seq_along(zeta)) {
+    if (zeta[z] >= 1) {
+      ATE_lb[z] <- (p11 + p10 / zeta[z]) - (p01 + zeta[z] * p00)
+      ATE_ub[z] <- (p11 + zeta[z] * p10) - (p01 + p00 / zeta[z])      
+    } else {
+      zeta_inv <- 1 / zeta[z]
+      ATE_lb[z] <- (p11 + p10 / zeta_inv) - (p01 + zeta_inv * p00)
+      ATE_ub[z] <- (p11 + zeta_inv * p10) - (p01 + p00 / zeta_inv)            
+    }
+  }
   
   
   ## estimate variance ------------------------------------
