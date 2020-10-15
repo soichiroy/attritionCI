@@ -6,6 +6,20 @@
 \usage{
 attrition_bound(formula, data, cbps = TRUE, zeta = c(1, 1.1, 1.2))
 }
+\arguments{
+\item{formula}{A formula of the form \code{outcome | treatmet ~  x1 + x2},
+where \code{outcoem} is the outcome of interest
+with missing value \code{NA}.
+\code{treatment} is the binary treatment indicator.
+Treatment and covariates should not have missing values.}
+
+\item{data}{A data frame.
+It should contain all variables specified in the \code{formula}.}
+
+\item{cbps}{A boolean argument. If \code{TRUE}, the covariate balancing propensity
+score (CBPS) is used to estimate the attrition score (and the propensity
+score when \code{est_ps = TRUE}). Otherwise, \code{glm} is used.}
+}
 \description{
 Estimate Bounds for ATE
 }

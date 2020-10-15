@@ -78,7 +78,7 @@ attrition <- function(formula, data, estimator = 'dr', est_ps = FALSE, cbps = TR
 }
 
 #' Estimate Bounds for ATE
-#' @inheritParam attrition
+#' @inheritParams attrition
 #' @export
 attrition_bound <- function(formula, data, cbps = TRUE, zeta = c(1, 1.1, 1.2)) {
   data <- as.data.frame(data)
@@ -120,64 +120,52 @@ attrition_bound <- function(formula, data, cbps = TRUE, zeta = c(1, 1.1, 1.2)) {
   Yobs  <- pull(data, !!sym(var_outcome))
   Dtr   <- pull(data, !!sym(var_treat))
 
-  tau   <- sum(na.omit(R[Dtr == 1] * Yobs[Dtr == 1])) / sum(Dtr == 1) -
-           sum(na.omit(R[Dtr == 0] * Yobs[Dtr == 0])) / sum(Dtr == 0)
+  LB <- UB <- rep(NA, length(zeta))
+  for (z in 1:length(zeta)) {
+    ## compute weights
+    w_zeta     <- R * (ascore + (1 - ascore) * zeta[z]) / ascore
+    w_zeta_inv <- R * (ascore + (1 - ascore) / zeta[z]) / ascore
 
-  # weights
-  w1 <- R[Dtr == 1] * (1 - ascore[Dtr == 1]) / ascore[Dtr == 1]
-  w0 <- R[Dtr == 0] * (1 - ascore[Dtr == 0]) / ascore[Dtr == 0]
+    ## upper bound
+    Pw0_ub <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = TRUE, weights = w_zeta[Dtr == 0])
+    Pw1_ub <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = TRUE, weights = w_zeta_inv[Dtr == 1])
 
-  # spatstat::wcdf()
-  # bound <- calc_psi(var_treat, R, data, Yobs, ascore, zeta)
-  Pw1 <- spatstat::ewcdf(Yobs[Dtr == 1], weights = w1)
-  Pw0 <- spatstat::ewcdf(Yobs[Dtr == 0], weights = w0)
+    ## lower bound
+    Pw0_lb <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = TRUE, weights = w_zeta_inv[Dtr == 0])
+    Pw1_lb <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = TRUE, weights = w_zeta[Dtr == 1])
 
+    ## compute the bound
+    int1_ub <- integrate(Pw1_ub, lower = min(Yobs[Dtr == 1], na.rm = TRUE),
+                                 upper =  max(Yobs[Dtr == 1], na.rm = TRUE),
+                                 stop.on.error = FALSE)
+    int0_ub <- integrate(Pw0_ub, lower = min(Yobs[Dtr == 0], na.rm = TRUE),
+                                 upper =  max(Yobs[Dtr == 0], na.rm = TRUE),
+                                 stop.on.error = FALSE)
 
+    int1_lb <- integrate(Pw1_lb, lower = min(Yobs[Dtr == 1], na.rm = TRUE),
+                                 upper =  max(Yobs[Dtr == 1], na.rm = TRUE),
+                                 stop.on.error = FALSE)
+    int0_lb <- integrate(Pw0_lb, lower = min(Yobs[Dtr == 0], na.rm = TRUE),
+                                 upper =  max(Yobs[Dtr == 0], na.rm = TRUE),
+                                 stop.on.error = FALSE)
 
-  ## common integral
-  # ∫[-∞, 0] P(x) dx
-  UB_1_2 <- integrate(Pw1, lower = min(Yobs[Dtr == 1], na.rm = TRUE), upper = 0, stop.on.error = FALSE)
-  UB_0_2 <- integrate(Pw0, lower = min(Yobs[Dtr == 0], na.rm = TRUE), upper = 0, stop.on.error = FALSE)
+    UB[z] <- int0_ub$value - int1_ub$value
+    LB[z] <- int0_lb$value - int1_lb$value
 
-
-
-  bounds <- purrr::map(zeta, function(zeta_use) {
-    ## define function
-    Pw1_ub <- function(x) { 1 - Pw1(x) / zeta_use }
-    Pw0_ub <- function(x) { 1 - Pw0(x) * zeta_use }
-    Pw1_lb <- function(x) { 1 - Pw1(x) * zeta_use }
-    Pw0_lb <- function(x) { 1 - Pw0(x) / zeta_use }
-
-    ## Upper bound ---------------------------
-    ## Pw1
-    # ∫[0, ∞] P(x) dx
-    UB_1_1 <- integrate(Pw1_ub, lower = 0, upper = max(Yobs[Dtr == 1], na.rm = TRUE), stop.on.error = FALSE)
-    UB_0_1 <- integrate(Pw0_ub, lower = 0, upper = max(Yobs[Dtr == 0], na.rm = TRUE), stop.on.error = FALSE)
-
-    ##
-    adj_UB <- (UB_1_1$value - UB_1_2$value / zeta_use) - (UB_0_1$value - UB_0_2$value * zeta_use)
-    tau_UB <- tau + adj_UB
-
-    ## Lower bound ---------------------------
-    # ∫[0, ∞] P(x) dx
-    LB_1_2 <- UB_1_2
-    LB_0_2 <- UB_0_2
-    LB_1_1 <- integrate(Pw1_lb, lower = 0, upper = max(Yobs[Dtr == 1], na.rm = TRUE), stop.on.error = FALSE)
-    LB_0_1 <- integrate(Pw0_lb, lower = 0, upper = max(Yobs[Dtr == 0], na.rm = TRUE), stop.on.error = FALSE)
-
-    ##
-    adj_LB <- (LB_1_1$value - LB_1_2$value * zeta_use) - (LB_0_1$value - LB_0_2$value / zeta_use)
-    tau_LB <- tau + adj_LB
-
-    return(c(LB = tau_LB, UB = tau_UB))
-  }) %>% do.call(rbind, .) %>% as_tibble() %>%
-  mutate(zeta = zeta)
+  }
 
 
+  bounds <- tibble(zeta = zeta, LB = LB, UB = UB)
 
 
+  ##
+  ## Compute Minimum Sensitivity Parameter
+  ##
+  # zeta_min <- (tau + sqrt(tau^2 + 4 * int_1$value * int_0$value)) / (2 * int_1$value)
+  zeta_min <- 1.1
 
-  return(bounds)
+
+  return(list(bouns = bounds, MSP = zeta_min))
 }
 
 #' Estimate Attrition Score

@@ -4,32 +4,31 @@
 \alias{attrition}
 \title{Estimate Average Treatment Effect under Differential Attrition}
 \usage{
-attrition(formula, data, estimator = "dr", est_ps = FALSE,
-  cbps = TRUE)
+attrition(formula, data, estimator = "dr", est_ps = FALSE, cbps = TRUE)
 }
 \arguments{
 \item{formula}{A formula of the form \code{outcome | treatmet ~  x1 + x2},
-where \code{outcoem} is the outcome of interest 
+where \code{outcoem} is the outcome of interest
 with missing value \code{NA}.
 \code{treatment} is the binary treatment indicator.
 Treatment and covariates should not have missing values.}
 
-\item{data}{A data frame. 
+\item{data}{A data frame.
 It should contain all variables specified in the \code{formula}.}
 
-\item{estimator}{An estimator used for estimating ATE. 
-Default is \code{"dr"} (double robust), and the other option is 
+\item{estimator}{An estimator used for estimating ATE.
+Default is \code{"dr"} (double robust), and the other option is
 \code{"ipw"} (inverse probability weighting).}
 
-\item{est_ps}{A boolean argument. If set \code{TRUE}, the propensity score is 
-estimated from the data. Otherwise, the complete randomization is  
-assumed, and the propensity score is set to the empirical propotion of 
-the treated units. 
+\item{est_ps}{A boolean argument. If set \code{TRUE}, the propensity score is
+estimated from the data. Otherwise, the complete randomization is
+assumed, and the propensity score is set to the empirical propotion of
+the treated units.
 This option should be \code{TRUE} when the data is from
 an observational study.}
 
 \item{cbps}{A boolean argument. If \code{TRUE}, the covariate balancing propensity
-score (CBPS) is used to estimate the attrition score (and the propensity 
+score (CBPS) is used to estimate the attrition score (and the propensity
 score when \code{est_ps = TRUE}). Otherwise, \code{glm} is used.}
 }
 \description{
