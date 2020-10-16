@@ -8,12 +8,12 @@
 #' @importFrom CBPS CBPS
 #' @import Formula
 #' @param formula   A formula of the form \code{outcome | treatmet ~  x1 + x2},
-#'                     where \code{outcoem} is the outcome of interest
-#'                     with missing value \code{NA}.
-#'                     \code{treatment} is the binary treatment indicator.
-#'                     Treatment and covariates should not have missing values.
+#'                  where \code{outcoem} is the outcome of interest
+#'                  with missing value \code{NA}.
+#'                  \code{treatment} is the binary treatment indicator.
+#'                  Treatment and covariates should not have missing values.
 #' @param data      A data frame.
-#'                    It should contain all variables specified in the \code{formula}.
+#'                  It should contain all variables specified in the \code{formula}.
 #' @param estimator An estimator used for estimating ATE.
 #'                  Default is \code{"dr"} (double robust), and the other option is
 #'                  \code{"ipw"} (inverse probability weighting).
@@ -77,97 +77,7 @@ attrition <- function(formula, data, estimator = 'dr', est_ps = FALSE, cbps = TR
 
 }
 
-#' Estimate Bounds for ATE
-#' @inheritParams attrition
-#' @importFrom spatstat ewcdf
-#' @export
-attrition_bound <- function(formula, data, cbps = TRUE, zeta = c(1, 1.1, 1.2)) {
-  data <- as.data.frame(data)
 
-  ## check if \code{outcome | treatment}
-  if (length(as.Formula(formula))[1] != 2) {
-    stop('Incorrect formula specifications. See the documentation.')
-  }
-
-  ## check if all variables in the formula exists in the data
-  vars <- all.vars(as.Formula(formula))
-
-  if (!all(vars %in% colnames(data))) {
-    stop("Variable is missing from the data.")
-  }
-
-  ## obtain formula
-  fm_outcome <- formula(as.Formula(formula), lhs = 1, rhs = 1)
-  fm_treat   <- formula(as.Formula(formula), lhs = 2, rhs = 1)
-  fm_X       <- formula(as.Formula(formula), lhs = 0, rhs = 1)
-
-  ## create missing outcome
-  var_outcome <- vars[1]
-  var_treat   <- vars[2]
-
-  ## create attrition indicator (R = 1 if observed)
-  data$R <- R <- as.numeric(!is.na(data[,var_outcome]))
-
-  ## -------------------------------------- ##
-  ## estimate attrition score
-  ## -------------------------------------- ##
-  ascore <- attrition_score(update(fm_X, R ~ .), varname_treat = var_treat,
-                            data = data, cbps)
-
-
-  ## -------------------------------------- ##
-  ## Compute bounds
-  ## -------------------------------------- ##
-  Yobs  <- pull(data, !!sym(var_outcome))
-  Dtr   <- pull(data, !!sym(var_treat))
-
-  LB <- UB <- rep(NA, length(zeta))
-  for (z in 1:length(zeta)) {
-    ## compute weights
-    w_zeta     <- R * (ascore + (1 - ascore) * zeta[z]) / ascore
-    w_zeta_inv <- R * (ascore + (1 - ascore) / zeta[z]) / ascore
-
-    ## upper bound
-    Pw0_ub <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE, weights = w_zeta[Dtr == 0] / sum(Dtr == 0))
-    Pw1_ub <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = FALSE, weights = w_zeta_inv[Dtr == 1] / sum(Dtr == 1))
-
-    ## lower bound
-    Pw0_lb <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE, weights = w_zeta_inv[Dtr == 0] / sum(Dtr == 0))
-    Pw1_lb <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = FALSE, weights = w_zeta[Dtr == 1] / sum(Dtr == 1))
-
-    ## compute the bound
-    int1_ub <- integrate(Pw1_ub, lower = min(Yobs, na.rm = TRUE),
-                                 upper = max(Yobs, na.rm = TRUE),
-                                 stop.on.error = FALSE)
-    int0_ub <- integrate(Pw0_ub, lower = min(Yobs, na.rm = TRUE),
-                                 upper = max(Yobs, na.rm = TRUE),
-                                 stop.on.error = FALSE)
-
-    int1_lb <- integrate(Pw1_lb, lower = min(Yobs, na.rm = TRUE),
-                                 upper = max(Yobs, na.rm = TRUE),
-                                 stop.on.error = FALSE)
-    int0_lb <- integrate(Pw0_lb, lower = min(Yobs, na.rm = TRUE),
-                                 upper = max(Yobs, na.rm = TRUE),
-                                 stop.on.error = FALSE)
-
-    UB[z] <- int0_ub$value - int1_ub$value
-    LB[z] <- int0_lb$value - int1_lb$value
-
-  }
-
-
-  bounds <- tibble(zeta = zeta, LB = LB, UB = UB)
-
-
-  ##
-  ## Compute Minimum Sensitivity Parameter
-  ##
-  # zeta_min <- (tau + sqrt(tau^2 + 4 * int_1$value * int_0$value)) / (2 * int_1$value)
-  zeta_min <- 1.1
-
-
-  return(list(bounds = bounds, MSP = zeta_min))
-}
 
 #' Estimate Attrition Score
 #' @keywords internal
@@ -328,51 +238,4 @@ attrition_ipw <- function(var_treat, R, data, Yobs, ascore, ps) {
     statistic = ATE_est / std.err,
     p.value   = dnorm(ATE_est / std.err)
   )
-}
-
-
-
-
-#' IPW Estimator
-#' @keywords internal
-calc_psi <- function(var_treat, R, data, Yobs, ascore, zeta) {
-  ## treatment vector -------------------------------------
-  D <- data[,var_treat]
-  n <- nrow(data)
-
-  ## estimate 𝞧(1,1) and 𝞧(1,0) -------------------------
-  use_tr <- D == 1 & R == 1
-  n1 <- sum(D == 1)
-  p11 <- sum(Yobs[use_tr] / ascore[use_tr]) / n
-  p10 <- sum(Yobs[use_tr] * (1 - ascore[use_tr]) / ascore[use_tr]) / n
-
-  ## estimate 𝞧(0,1) and 𝞧(0,0) --------------------------
-  use_ct <- D == 0 & R == 1
-  n0 <- sum(D == 0)
-  p01 <- sum(Yobs[use_ct] / ascore[use_ct]) / n
-  p00 <- sum(Yobs[use_ct] * (1 - ascore[use_ct]) / ascore[use_ct]) / n
-
-  ## estimate bounds for ATE ------------------------------
-  ATE_lb <- ATE_ub <- rep(NA, length(zeta))
-  for (z in seq_along(zeta)) {
-    if (zeta[z] >= 1) {
-      ATE_lb[z] <- (p11 + p10 / zeta[z]) - (p01 + zeta[z] * p00)
-      ATE_ub[z] <- (p11 + zeta[z] * p10) - (p01 + p00 / zeta[z])
-    } else {
-      zeta_inv <- 1 / zeta[z]
-      ATE_lb[z] <- (p11 + p10 / zeta_inv) - (p01 + zeta_inv * p00)
-      ATE_ub[z] <- (p11 + zeta_inv * p10) - (p01 + p00 / zeta_inv)
-    }
-  }
-
-
-  ## estimate variance ------------------------------------
-
-  ## return object
-  out <- list(
-    psi = c(p11, p10, p01, p00),
-    lb  = ATE_lb,
-    ub  = ATE_ub
-  )
-  return(out)
 }

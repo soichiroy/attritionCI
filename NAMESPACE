@@ -2,9 +2,10 @@
 
 export(attrition)
 export(attrition_bound)
+import(Formula)
 importFrom(CBPS,CBPS)
-importFrom(Formula,as.Formula)
 importFrom(dplyr,filter)
 importFrom(dplyr,pull)
 importFrom(rlang,"!!")
 importFrom(rlang,sym)
+importFrom(spatstat,ewcdf)
