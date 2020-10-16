@@ -10,7 +10,8 @@ attrition_bound(
   qoi = "ate",
   cbps = TRUE,
   zeta = c(1, 1.1, 1.2),
-  probs = c(0.25, 0.5, 0.75)
+  probs = c(0.25, 0.5, 0.75),
+  options = list(ci = FALSE, n_boot = 500)
 )
 }
 \arguments{
