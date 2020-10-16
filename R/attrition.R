@@ -6,7 +6,7 @@
 #'
 #' @export
 #' @importFrom CBPS CBPS
-#' @importFrom Formula as.Formula
+#' @import Formula
 #' @param formula   A formula of the form \code{outcome | treatmet ~  x1 + x2},
 #'                     where \code{outcoem} is the outcome of interest
 #'                     with missing value \code{NA}.
@@ -79,6 +79,7 @@ attrition <- function(formula, data, estimator = 'dr', est_ps = FALSE, cbps = TR
 
 #' Estimate Bounds for ATE
 #' @inheritParams attrition
+#' @importFrom spatstat ewcdf
 #' @export
 attrition_bound <- function(formula, data, cbps = TRUE, zeta = c(1, 1.1, 1.2)) {
   data <- as.data.frame(data)
@@ -127,26 +128,26 @@ attrition_bound <- function(formula, data, cbps = TRUE, zeta = c(1, 1.1, 1.2)) {
     w_zeta_inv <- R * (ascore + (1 - ascore) / zeta[z]) / ascore
 
     ## upper bound
-    Pw0_ub <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = TRUE, weights = w_zeta[Dtr == 0])
-    Pw1_ub <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = TRUE, weights = w_zeta_inv[Dtr == 1])
+    Pw0_ub <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE, weights = w_zeta[Dtr == 0] / sum(Dtr == 0))
+    Pw1_ub <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = FALSE, weights = w_zeta_inv[Dtr == 1] / sum(Dtr == 1))
 
     ## lower bound
-    Pw0_lb <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = TRUE, weights = w_zeta_inv[Dtr == 0])
-    Pw1_lb <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = TRUE, weights = w_zeta[Dtr == 1])
+    Pw0_lb <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE, weights = w_zeta_inv[Dtr == 0] / sum(Dtr == 0))
+    Pw1_lb <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = FALSE, weights = w_zeta[Dtr == 1] / sum(Dtr == 1))
 
     ## compute the bound
-    int1_ub <- integrate(Pw1_ub, lower = min(Yobs[Dtr == 1], na.rm = TRUE),
-                                 upper =  max(Yobs[Dtr == 1], na.rm = TRUE),
+    int1_ub <- integrate(Pw1_ub, lower = min(Yobs, na.rm = TRUE),
+                                 upper = max(Yobs, na.rm = TRUE),
                                  stop.on.error = FALSE)
-    int0_ub <- integrate(Pw0_ub, lower = min(Yobs[Dtr == 0], na.rm = TRUE),
-                                 upper =  max(Yobs[Dtr == 0], na.rm = TRUE),
+    int0_ub <- integrate(Pw0_ub, lower = min(Yobs, na.rm = TRUE),
+                                 upper = max(Yobs, na.rm = TRUE),
                                  stop.on.error = FALSE)
 
-    int1_lb <- integrate(Pw1_lb, lower = min(Yobs[Dtr == 1], na.rm = TRUE),
-                                 upper =  max(Yobs[Dtr == 1], na.rm = TRUE),
+    int1_lb <- integrate(Pw1_lb, lower = min(Yobs, na.rm = TRUE),
+                                 upper = max(Yobs, na.rm = TRUE),
                                  stop.on.error = FALSE)
-    int0_lb <- integrate(Pw0_lb, lower = min(Yobs[Dtr == 0], na.rm = TRUE),
-                                 upper =  max(Yobs[Dtr == 0], na.rm = TRUE),
+    int0_lb <- integrate(Pw0_lb, lower = min(Yobs, na.rm = TRUE),
+                                 upper = max(Yobs, na.rm = TRUE),
                                  stop.on.error = FALSE)
 
     UB[z] <- int0_ub$value - int1_ub$value
@@ -165,7 +166,7 @@ attrition_bound <- function(formula, data, cbps = TRUE, zeta = c(1, 1.1, 1.2)) {
   zeta_min <- 1.1
 
 
-  return(list(bouns = bounds, MSP = zeta_min))
+  return(list(bounds = bounds, MSP = zeta_min))
 }
 
 #' Estimate Attrition Score
