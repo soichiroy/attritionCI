@@ -4,18 +4,19 @@
 #' Compute the bounds on casual effects with sensitivity parameter zeta.
 #'
 #' @inheritParams attrition
-#' @param zeta A vector of sensitivity parameters. The values should be between 1 and 2.
-#' @param probs A vector of quantiles. The value should be between 0 and 1.
-#'              This argument is meaninful when the quantile treatment effeect (`qoi = "qte"`)
-#'              is specified as the quantity of interest.
-#' @param qoi Quantity of interest.
-#'            The function currently supports the average treatment efeect (`"ate"`) or
-#'            the quantile treatment effect (`"qte"`).
+#' @param zeta    A vector of sensitivity parameters. The values should be between 1 and 2.
+#' @param probs   A vector of quantiles. The value should be between 0 and 1.
+#'                This argument is meaninful when the quantile treatment effeect (`qoi = "qte"`)
+#'                is specified as the quantity of interest.
+#' @param qoi     Quantity of interest.
+#'                The function currently supports the average treatment efeect (`"ate"`) or
+#'                the quantile treatment effect (`"qte"`).
 #' @param options A list of the following optional arguments:
-#'  \describe{
-#'    \item{ci}{A boolean argument. If `TRUE`, the confidence intervals are computed via bootstrap.}
-#'    \item{n_boot}{The number of bootstrap iterations.}
-#'  }
+#'                \describe{
+#'                  \item{ci}{A boolean argument.
+#'                    If `TRUE`, the confidence intervals are computed via bootstrap.}
+#'                  \item{n_boot}{The number of bootstrap iterations.}
+#'                }
 #' @importFrom dplyr left_join mutate pull rename select %>%
 #' @importFrom rlang !! sym
 #' @import Formula

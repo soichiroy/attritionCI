@@ -40,7 +40,8 @@ is specified as the quantity of interest.}
 
 \item{options}{A list of the following optional arguments:
 \describe{
-  \item{ci}{A boolean argument. If `TRUE`, the confidence intervals are computed via bootstrap.}
+  \item{ci}{A boolean argument.
+    If `TRUE`, the confidence intervals are computed via bootstrap.}
   \item{n_boot}{The number of bootstrap iterations.}
 }}
 }
