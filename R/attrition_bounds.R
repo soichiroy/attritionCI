@@ -159,8 +159,9 @@ attrition_bound_ate <- function(Yobs, Dtr, R, ascore, zeta) {
 attrition_bound_ate_boot <- function(Yobs, Dtr, R, ascore, zeta, n_boot = 500) {
 
   n <- length(Dtr)
-
   LB <- UB <- matrix(NA, nrow = n_boot, ncol = length(zeta))
+
+  ## bootstrap -----------------------------------------------------------
   for (i in 1:n_boot) {
     ## re-sampled weights
     w_boot <- as.vector(rmultinom(1, n, prob = rep(1/n, n)))
@@ -201,6 +202,7 @@ attrition_bound_ate_boot <- function(Yobs, Dtr, R, ascore, zeta, n_boot = 500) {
       LB[i, z] <- int0_lb$value - int1_lb$value
     }
   }
+  ## end of bootstrap iterations -----------------------------------------
 
   ### compute the variance
   sigma_ub <- sqrt(apply(UB, 2, var))
@@ -272,57 +274,88 @@ attrition_bound_qte <- function(Yobs, Dtr, R, ascore, zeta, probs) {
 #' @importFrom spatstat ewcdf
 #' @importFrom dplyr across bind_rows group_by summarise tibble rename %>%
 #' @keywords internal
-attrition_bound_qte_boot <- function(Yobs, Dtr, R, ascore, zeta, probs, n_boot) {
-  n0 <- sum(Dtr == 0)
-  n1 <- sum(Dtr == 1)
+attrition_bound_qte_boot <- function(Yobs, Dtr, R, ascore, zeta, probs, n_boot, verbose = FALSE) {
 
-  boot_list <- vector('list', length = n_boot)
-  for (i in 1:n_boot) {
-    ## re-sampled weights
-    w_boot <- as.vector(rmultinom(1, n, prob = rep(1/n, n)))
-
-    ## -------------------------------------- ##
-    ## Compute bounds
-    ## -------------------------------------- ##
-    res <- vector('list', length = length(zeta))
-    for (z in 1:length(zeta)) {
-      UB <- LB <- rep(NA, length(probs))
-
-      ## compute weights
-      w_zeta     <- R * (ascore + (1 - ascore) * zeta[z]) / ascore
-      w_zeta_inv <- R * (ascore + (1 - ascore) / zeta[z]) / ascore
-
-      ## Cumulative function: F_w(ζ)(y)
-      Pw0_zeta <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE,
-        weights = w_zeta[Dtr == 0] * w_boot[Dtr == 0] / sum(w_boot[Dtr == 0]))
-      Pw0_zinv <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE,
-        weights = w_zeta_inv[Dtr == 0] * w_boot[Dtr == 0] / sum(w_boot[Dtr == 0]))
-      Pw1_zinv <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = FALSE,
-        weights = w_zeta_inv[Dtr == 1] * w_boot[Dtr == 1] / sum(w_boot[Dtr == 1]))
-      Pw1_zeta <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = FALSE,
-        weights = w_zeta[Dtr == 1] * w_boot[Dtr == 1] / sum(w_boot[Dtr == 1]))
-
-      ## compute F^{-1}(α)
-      y_range <- c(min(Yobs, na.rm = TRUE), max(Yobs, na.rm = TRUE))
-      for (alpha in 1:length(probs)) {
-        ## compute UB
-        Pw1_zeta_a <- function(x) { Pw1_zeta(x) - probs[alpha] }
-        Pw0_zinv_a <- function(x) { Pw0_zinv(x) - probs[alpha] }
-        UB[alpha]  <- uniroot(Pw1_zeta_a, interval = y_range)$root -
-                      uniroot(Pw0_zinv_a, interval = y_range)$root
-
-        ## compute LB
-        Pw1_zinv_a <- function(x) { Pw1_zinv(x) - probs[alpha] }
-        Pw0_zeta_a <- function(x) { Pw0_zeta(x) - probs[alpha] }
-        LB[alpha]  <- uniroot(Pw1_zinv_a, interval = y_range)$root -
-                      uniroot(Pw0_zeta_a, interval = y_range)$root
-      }
-
-      res[[z]] <- tibble(zeta = zeta[z], probs = probs, LB = LB, UB = UB, boot_id = i)
-    }
-
-    boot_list[[i]] <- res
+  ## check verbose
+  if (isTRUE(verbose)) {
+    iter_show <- round(n_boot * 0.1)
   }
+
+  n <- length(Dtr)
+  boot_list <- vector('list', length = n_boot)
+
+
+  ## bootstrap -----------------------------------------------------------
+  # reject the bootstrap replica when optimization fails
+  i <- 1
+  while(i <= n_boot) {
+    tryCatch({
+      # for (i in 1:n_boot) {
+        ## re-sampled weights
+        w_boot <- as.vector(rmultinom(1, n, prob = rep(1/n, n)))
+
+        ## -------------------------------------- ##
+        ## Compute bounds
+        ## -------------------------------------- ##
+        res <- vector('list', length = length(zeta))
+        for (z in 1:length(zeta)) {
+          UB <- LB <- rep(NA, length(probs))
+
+          ## compute weights
+          w_zeta     <- R * (ascore + (1 - ascore) * zeta[z]) / ascore
+          w_zeta_inv <- R * (ascore + (1 - ascore) / zeta[z]) / ascore
+
+          ## Cumulative function: F_w(ζ)(y)
+          Pw0_zeta <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE,
+            weights = w_zeta[Dtr == 0] * w_boot[Dtr == 0] / sum(w_boot[Dtr == 0]))
+          Pw0_zinv <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE,
+            weights = w_zeta_inv[Dtr == 0] * w_boot[Dtr == 0] / sum(w_boot[Dtr == 0]))
+          Pw1_zinv <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = FALSE,
+            weights = w_zeta_inv[Dtr == 1] * w_boot[Dtr == 1] / sum(w_boot[Dtr == 1]))
+          Pw1_zeta <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = FALSE,
+            weights = w_zeta[Dtr == 1] * w_boot[Dtr == 1] / sum(w_boot[Dtr == 1]))
+
+          ## compute F^{-1}(α)
+          y_range <- c(min(Yobs, na.rm = TRUE), max(Yobs, na.rm = TRUE))
+          for (alpha in 1:length(probs)) {
+            ## compute UB
+            Pw1_zeta_a <- function(x) { Pw1_zeta(x) - probs[alpha] }
+            Pw0_zinv_a <- function(x) { Pw0_zinv(x) - probs[alpha] }
+            UB[alpha]  <- uniroot(Pw1_zeta_a, interval = y_range)$root -
+                          uniroot(Pw0_zinv_a, interval = y_range)$root
+
+            ## compute LB
+            Pw1_zinv_a <- function(x) { Pw1_zinv(x) - probs[alpha] }
+            Pw0_zeta_a <- function(x) { Pw0_zeta(x) - probs[alpha] }
+            LB[alpha]  <- uniroot(Pw1_zinv_a, interval = y_range)$root -
+                          uniroot(Pw0_zeta_a, interval = y_range)$root
+          }
+
+          res[[z]] <- tibble(zeta = zeta[z], probs = probs, LB = LB, UB = UB, boot_id = i)
+        }
+
+
+        boot_list[[i]] <- res
+
+        # update iterator
+        i <- i + 1
+
+      }, error = function(e) {
+      NULL
+    })
+
+    ## verbose ----------------------------------------------------
+    if (isTRUE(verbose)) {
+      if ((i %% iter_show) == 0) {
+          cat('\r', i, "out of", n_boot, "bootstrap iterations")
+          flush.console()
+      }
+    }
+    ## end of verbose ---------------------------------------------
+
+  }
+  ## end of bootstrap iterations -----------------------------------------
+
 
 
   ## compute the variance

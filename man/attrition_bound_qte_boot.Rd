@@ -4,7 +4,16 @@
 \alias{attrition_bound_qte_boot}
 \title{Estimate Variance of Bounds for QTE with Bootstrap}
 \usage{
-attrition_bound_qte_boot(Yobs, Dtr, R, ascore, zeta, probs, n_boot)
+attrition_bound_qte_boot(
+  Yobs,
+  Dtr,
+  R,
+  ascore,
+  zeta,
+  probs,
+  n_boot,
+  verbose = FALSE
+)
 }
 \description{
 Estimate Variance of Bounds for QTE with Bootstrap
