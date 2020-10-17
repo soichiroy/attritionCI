@@ -24,7 +24,7 @@
 attrition_bound <- function(
   formula, data, qoi = "ate", cbps = TRUE,
   zeta = c(1, 1.1, 1.2), probs = c(0.25, 0.5, 0.75),
-  options = list(ci = FALSE, n_boot = 100)
+  options = list(ci = TRUE, n_boot = 100)
 ) {
 
   ## treat dataset as data.frame to avoid errors
