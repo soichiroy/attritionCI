@@ -4,12 +4,18 @@
 #' Compute the bounds on casual effects with sensitivity parameter zeta.
 #'
 #' @inheritParams attrition
-#' @param zeta A vector of sensitivity parameters. The values should be greater than or equal to 1.
+#' @param zeta A vector of sensitivity parameters. The values should be between 1 and 2.
 #' @param probs A vector of quantiles. The value should be between 0 and 1.
-#'              This argument is only meaninful when the quantile treatment effeect (`qoi = "qte"`)
-#'              is computed.
-#' @param qoi Quantity of interest. Currently supports the average treatment efeect (`"ate"`) or
-#'             the quantile treatment effect (`"qte"`)
+#'              This argument is meaninful when the quantile treatment effeect (`qoi = "qte"`)
+#'              is specified as the quantity of interest.
+#' @param qoi Quantity of interest.
+#'            The function currently supports the average treatment efeect (`"ate"`) or
+#'            the quantile treatment effect (`"qte"`).
+#' @param options A list of the following optional arguments:
+#'  \describe{
+#'    \item{ci}{A boolean argument. If `TRUE`, the confidence intervals are computed via bootstrap.}
+#'    \item{n_boot}{The number of bootstrap iterations.}
+#'  }
 #' @importFrom dplyr left_join mutate pull rename select %>%
 #' @importFrom rlang !! sym
 #' @import Formula
@@ -17,23 +23,38 @@
 attrition_bound <- function(
   formula, data, qoi = "ate", cbps = TRUE,
   zeta = c(1, 1.1, 1.2), probs = c(0.25, 0.5, 0.75),
-  options = list(ci = FALSE, n_boot = 500)
+  options = list(ci = FALSE, n_boot = 100)
 ) {
 
   ## treat dataset as data.frame to avoid errors
   data <- as.data.frame(data)
 
+  ## -------------------------------------- ##
+  ## Input checks
+  ## -------------------------------------- ##
   ## check if \code{outcome | treatment}
   if (length(as.Formula(formula))[1] != 2) {
     stop('Incorrect formula specifications. See the documentation.')
   }
+  if (any(zeta > 2)) {
+    stop("Value of zeta is too large. Specify zeta < 2.")
+  }
+  if (any(zeta < 1)) {
+    stop("Invalid value of zeta. Specify zeta >= 1.")
+  }
+  if (any(probs > 1) | any(probs < 0)) {
+    stop("Invalid value of probs. Specify 0 <= probs <= 1.")
+  }
 
   ## check if all variables in the formula exists in the data
   vars <- all.vars(as.Formula(formula))
-
   if (!all(vars %in% colnames(data))) {
-    stop("Variable is missing from the data.")
+    stop("Variable in the formula is missing from the data.")
   }
+
+  ## option
+  if (!exists('ci', options)) options$ci <- TRUE
+  if (!exists('n_boot', options)) options$n_boot <- 100
 
   ## obtain formula
   fm_outcome <- formula(as.Formula(formula), lhs = 1, rhs = 1)
@@ -57,8 +78,9 @@ attrition_bound <- function(
   ## -------------------------------------- ##
   ## Get outcome and treatment
   ## -------------------------------------- ##
-  Yobs  <- pull(data, !!sym(var_outcome))  ## should have na
+  Yobs  <- pull(data, !!sym(var_outcome))  ## should have NA
   Dtr   <- pull(data, !!sym(var_treat))
+  if (sum(is.na(Yobs)) == 0) { stop("No NA found in the outcome variable.") }
 
   ## -------------------------------------- ##
   ## Compute bounds
@@ -86,8 +108,8 @@ attrition_bound <- function(
     bounds <- attrition_bound_qte(Yobs, Dtr, R, ascore, zeta, probs)
 
     if (isTRUE(options$ci)) {
+      ## compute CI
       bounds_ci <- attrition_bound_qte_boot(Yobs, Dtr, R, ascore, zeta, probs, options$n_boot)
-
       bounds <- left_join(bounds, bounds_ci, by = c("zeta", "probs")) %>%
                 mutate(
                   CI90_LB = LB + qnorm(0.10) * se_lb,
@@ -119,31 +141,33 @@ attrition_bound_ate <- function(Yobs, Dtr, R, ascore, zeta) {
     w_zeta     <- R * (ascore + (1 - ascore) * zeta[z]) / ascore
     w_zeta_inv <- R * (ascore + (1 - ascore) / zeta[z]) / ascore
 
+    ## data summary
+    n1 <- sum(Dtr == 1); n0 <- sum(Dtr == 0)
+    Y1 <- Yobs[Dtr == 1]; Y0 <- Yobs[Dtr == 0]
+
     ## upper bound
-    Pw0_ub <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE,
-                              weights = w_zeta[Dtr == 0] / sum(Dtr == 0))
-    Pw1_ub <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = FALSE,
-                              weights = w_zeta_inv[Dtr == 1] / sum(Dtr == 1))
+    Pw0_ub <- spatstat::ewcdf(Y0, normalise = FALSE,
+                              weights = w_zeta[Dtr == 0] / n0)
+    Pw1_ub <- spatstat::ewcdf(Y1, normalise = FALSE,
+                              weights = w_zeta_inv[Dtr == 1] / n1)
 
     ## lower bound
-    Pw0_lb <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE,
-                              weights = w_zeta_inv[Dtr == 0] / sum(Dtr == 0))
-    Pw1_lb <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = FALSE,
-                              weights = w_zeta[Dtr == 1] / sum(Dtr == 1))
+    Pw0_lb <- spatstat::ewcdf(Y0, normalise = FALSE,
+                              weights = w_zeta_inv[Dtr == 0] / n0)
+    Pw1_lb <- spatstat::ewcdf(Y1, normalise = FALSE,
+                              weights = w_zeta[Dtr == 1] / n1)
 
     ## compute the bound
-    int1_ub <- integrate(Pw1_ub, lower = min(Yobs, na.rm = TRUE),
-                                 upper = max(Yobs, na.rm = TRUE),
+    y_max <- max(Yobs, na.rm = TRUE)
+    y_min <- min(Yobs, na.rm = TRUE)
+    int1_ub <- integrate(Pw1_ub, lower = y_min, upper = y_max,
                                  stop.on.error = FALSE)
-    int0_ub <- integrate(Pw0_ub, lower = min(Yobs, na.rm = TRUE),
-                                 upper = max(Yobs, na.rm = TRUE),
+    int0_ub <- integrate(Pw0_ub, lower = y_min, upper = y_max,
                                  stop.on.error = FALSE)
 
-    int1_lb <- integrate(Pw1_lb, lower = min(Yobs, na.rm = TRUE),
-                                 upper = max(Yobs, na.rm = TRUE),
+    int1_lb <- integrate(Pw1_lb, lower = y_min, upper = y_max,
                                  stop.on.error = FALSE)
-    int0_lb <- integrate(Pw0_lb, lower = min(Yobs, na.rm = TRUE),
-                                 upper = max(Yobs, na.rm = TRUE),
+    int0_lb <- integrate(Pw0_lb, lower = y_min, upper = y_max,
                                  stop.on.error = FALSE)
 
     UB[z] <- int0_ub$value - int1_ub$value
@@ -155,7 +179,13 @@ attrition_bound_ate <- function(Yobs, Dtr, R, ascore, zeta) {
   return(bounds)
 }
 
-
+#' Compute Variance of ATE Bound via Bootstrap
+#' @keywords internal
+#' @param Yobs A vector of outcomes. It should contain at least two `NA` values for each condition.
+#' @param Dtr A vector of binary treatment indicator.
+#' @param R A vector of missing value indicator.
+#' @param ascore A vector of estimated attrition score.
+#' @param zeta A vector of the sensitivity parameter. The value should be larger than 1.
 attrition_bound_ate_boot <- function(Yobs, Dtr, R, ascore, zeta, n_boot = 500) {
 
   n <- length(Dtr)
@@ -286,7 +316,7 @@ attrition_bound_qte_boot <- function(Yobs, Dtr, R, ascore, zeta, probs, n_boot, 
 
 
   ## bootstrap -----------------------------------------------------------
-  # reject the bootstrap replica when optimization fails
+  # reject the bootstrap replica when inversion fails
   i <- 1
   while(i <= n_boot) {
     tryCatch({
@@ -301,11 +331,11 @@ attrition_bound_qte_boot <- function(Yobs, Dtr, R, ascore, zeta, probs, n_boot, 
         for (z in 1:length(zeta)) {
           UB <- LB <- rep(NA, length(probs))
 
-          ## compute weights
+          ## compute weights --------------------------------------------------
           w_zeta     <- R * (ascore + (1 - ascore) * zeta[z]) / ascore
           w_zeta_inv <- R * (ascore + (1 - ascore) / zeta[z]) / ascore
 
-          ## Cumulative function: F_w(ζ)(y)
+          ## Cumulative function: F_w(ζ)(y) -----------------------------------
           Pw0_zeta <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE,
             weights = w_zeta[Dtr == 0] * w_boot[Dtr == 0] / sum(w_boot[Dtr == 0]))
           Pw0_zinv <- spatstat::ewcdf(Yobs[Dtr == 0], normalise = FALSE,
@@ -315,7 +345,7 @@ attrition_bound_qte_boot <- function(Yobs, Dtr, R, ascore, zeta, probs, n_boot, 
           Pw1_zeta <- spatstat::ewcdf(Yobs[Dtr == 1], normalise = FALSE,
             weights = w_zeta[Dtr == 1] * w_boot[Dtr == 1] / sum(w_boot[Dtr == 1]))
 
-          ## compute F^{-1}(α)
+          ## compute F^{-1}(α) via root finding -------------------------------
           y_range <- c(min(Yobs, na.rm = TRUE), max(Yobs, na.rm = TRUE))
           for (alpha in 1:length(probs)) {
             ## compute UB
@@ -334,12 +364,11 @@ attrition_bound_qte_boot <- function(Yobs, Dtr, R, ascore, zeta, probs, n_boot, 
           res[[z]] <- tibble(zeta = zeta[z], probs = probs, LB = LB, UB = UB, boot_id = i)
         }
 
-
+        # save object
         boot_list[[i]] <- res
 
         # update iterator
         i <- i + 1
-
       }, error = function(e) {
       NULL
     })
