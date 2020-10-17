@@ -133,7 +133,8 @@ ggplot(bd_qte %>% filter(zeta != 1), aes(x = probs)) +
   ylim(-1, 1) + 
   theme_bw() +
   theme(legend.position = 'bottom') + 
-  labs(y = "Quantile Treatment Effect", x = "Quantile", fill = 'Sensitivity parameters (zeta)') + 
+  labs(y = "Quantile Treatment Effect", x = "Quantile", 
+       fill = 'Sensitivity parameters (zeta)') + 
   facet_wrap(~effects)
 ```
 
