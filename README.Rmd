@@ -134,7 +134,7 @@ bd2_qte <- attrition_bound(fm2, data = dat_use, qoi = 'qte', zeta = zeta_vec,
 
 
 
-```{r, dpi=250, fig.height=4}
+```{r, dpi=250, fig.height=4.5}
 bd_qte <- bind_rows(
   bd1_qte %>% mutate(effects = "Short-term Effect"),
   bd2_qte %>% mutate(effects = "Long-term Effect")
@@ -149,7 +149,9 @@ ggplot(bd_qte %>% filter(zeta != 1), aes(x = probs)) +
   scale_fill_manual(values = c("gray20", "gray50", "gray80")) + 
   ylim(-1, 1) + 
   theme_bw() +
-  labs(y = "Quantile Treatment Effect", x = "Quantile", fill = 'Sensitivity \n parameters') + 
+  theme(legend.position = 'bottom') + 
+  labs(y = "Quantile Treatment Effect", x = "Quantile", 
+       fill = 'Sensitivity parameters (zeta)') + 
   facet_wrap(~effects)
   
 ```
