@@ -24,6 +24,7 @@
 attrition_bound <- function(
   formula, data, qoi = "ate", cbps = TRUE,
   zeta = c(1, 1.1, 1.2), probs = c(0.25, 0.5, 0.75),
+  ascore  = NULL,
   options = list(ci = TRUE, n_boot = 100)
 ) {
 
@@ -72,9 +73,11 @@ attrition_bound <- function(
   ## -------------------------------------- ##
   ## estimate attrition score
   ## -------------------------------------- ##
-  ascore <- attrition_score(update(fm_X, R ~ .),
-                            varname_treat = var_treat,
-                            data = data, cbps)
+  if (is.null(ascore)) {
+    ascore <- attrition_score(update(fm_X, R ~ .),
+                              varname_treat = var_treat,
+                              data = data, cbps)
+  }
 
   ## -------------------------------------- ##
   ## Get outcome and treatment
@@ -82,28 +85,35 @@ attrition_bound <- function(
   Yobs  <- pull(data, !!sym(var_outcome))  ## should have NA
   Dtr   <- pull(data, !!sym(var_treat))
   if (sum(is.na(Yobs)) == 0) { stop("No NA found in the outcome variable.") }
+  is_discrete <- ifelse( length(unique(na.omit(Yobs))) <= 10, TRUE, FALSE )
+  if (qoi == 'qte' & isTRUE(is_discrete)) {
+    stop("QTE option is not supproted for the discrete outcome with small number of support points")
+  }
 
   ## -------------------------------------- ##
   ## Compute bounds
   ## -------------------------------------- ##
   if (qoi == "ate") {
     ## compute the identification bounds on ATE τ
-    bounds <- attrition_bound_ate(Yobs, Dtr, R, ascore, zeta)
+    bounds <- attrition_bound_ate(Yobs, Dtr, R, ascore, zeta, is_discrete)
 
     if (isTRUE(options$ci)) {
       ## bootstrap to compute the variance of τ
-      bounds_ci <- attrition_bound_ate_boot(Yobs, Dtr, R, ascore, zeta, options$n_boot)
-
+      # bounds_ci <- attrition_bound_ate_boot(Yobs, Dtr, R, ascore, zeta, options$n_boot)
+      bounds_ci <- attrition_bound_ate_boot_full(
+        update(fm_X, R ~ .), varname_treat = var_treat, Yobs, R, data = data, cbps,
+        zeta, options$n_boot, is_discrete
+      )
+      cv_alpha <- optimize_alpha(alpha = 0.1, bounds$UB, bounds$LB,
+                              bounds_ci$se_lb, bounds_ci$se_ub, n = length(Yobs))
       ## compute the CI
       # 90%
-      bounds$CI90_LB <- bounds$LB + qnorm(0.1) * bounds_ci$se_lb
-      bounds$CI90_UB <- bounds$UB + qnorm(0.9) * bounds_ci$se_ub
+      bounds$CI90_LB <- bounds$LB - cv_alpha * bounds_ci$se_lb
+      bounds$CI90_UB <- bounds$UB + cv_alpha * bounds_ci$se_ub
 
-      # 95%
-      bounds$CI95_LB <- bounds$LB + qnorm(0.05) * bounds_ci$se_lb
-      bounds$CI95_UB <- bounds$UB + qnorm(0.95) * bounds_ci$se_ub
+      bounds$SE_UB <- bounds_ci$se_ub
+      bounds$SE_LB <- bounds_ci$se_lb
     }
-
   } else if (qoi == "qte") {
     ## compute identification bounds on QTE η(α) for α ∈ probs
     bounds <- attrition_bound_qte(Yobs, Dtr, R, ascore, zeta, probs)
@@ -130,13 +140,27 @@ attrition_bound <- function(
 }
 
 
+optimize_alpha <- function(alpha = 0.1, UB, LB, var1, var2, n) {
+  a_range <- c(1, 2)
+  alpha_adaptive <- rep(NA, length(UB))
+  for (i in 1:length(UB)) {
+    fn <- function(x) {
+      pnorm(x + sqrt(n) * (UB[i] - LB[i]) / max(var1[i], var2[i])) - pnorm(-x) - (1 - alpha)
+    }
+    alpha_adaptive[i] <- uniroot(fn, interval = a_range)$root
+  }
+
+  return(alpha_adaptive)
+}
+
 #' Compute bounds on ATE
 #' @inheritParams attrition
+#' @param is_discrete A boolean argument if the outcome is a discrete variable or not.
 #' @importFrom spatstat ewcdf
 #' @importFrom dplyr tibble
 #' @keywords internal
-attrition_bound_ate <- function(Yobs, Dtr, R, ascore, zeta) {
-  LB <- UB <- rep(NA, length(zeta))
+attrition_bound_ate <- function(Yobs, Dtr, R, ascore, zeta, is_discrete) {
+  LB <- UB <- UB2 <- LB2 <- rep(NA, length(zeta))
   for (z in 1:length(zeta)) {
     ## compute weights
     w_zeta     <- R * (ascore + (1 - ascore) * zeta[z]) / ascore
@@ -158,26 +182,80 @@ attrition_bound_ate <- function(Yobs, Dtr, R, ascore, zeta) {
     Pw1_lb <- spatstat::ewcdf(Y1, normalise = FALSE,
                               weights = w_zeta[Dtr == 1] / n1)
 
-    ## compute the bound
-    y_max <- max(Yobs, na.rm = TRUE)
-    y_min <- min(Yobs, na.rm = TRUE)
-    int1_ub <- integrate(Pw1_ub, lower = y_min, upper = y_max,
-                                 stop.on.error = FALSE)
-    int0_ub <- integrate(Pw0_ub, lower = y_min, upper = y_max,
-                                 stop.on.error = FALSE)
+    if (isTRUE(is_discrete)) {
+      ## should check if it ranges from 0 -----
+      y_range <- sort(unique(na.omit(Yobs)))
+      UB[z] <- LB[z] <- 0
+      for (i in 1:length(y_range)) {
+        UB[z] <- UB[z] + Pw0_ub(y_range[i]) - Pw1_ub(y_range[i])
+        LB[z] <- LB[z] + Pw0_lb(y_range[i]) - Pw1_lb(y_range[i])
+      }
+    } else {
+      ## compute the bound
+      y_max <- max(Yobs, na.rm = TRUE)
+      y_min <- min(Yobs, na.rm = TRUE)
+      int1_ub <- integrate(Pw1_ub, lower = y_min, upper = y_max,
+                                   stop.on.error = FALSE)
+      int0_ub <- integrate(Pw0_ub, lower = y_min, upper = y_max,
+                                   stop.on.error = FALSE)
 
-    int1_lb <- integrate(Pw1_lb, lower = y_min, upper = y_max,
-                                 stop.on.error = FALSE)
-    int0_lb <- integrate(Pw0_lb, lower = y_min, upper = y_max,
-                                 stop.on.error = FALSE)
+      int1_lb <- integrate(Pw1_lb, lower = y_min, upper = y_max,
+                                   stop.on.error = FALSE)
+      int0_lb <- integrate(Pw0_lb, lower = y_min, upper = y_max,
+                                   stop.on.error = FALSE)
 
-    UB[z] <- int0_ub$value - int1_ub$value
-    LB[z] <- int0_lb$value - int1_lb$value
+      UB[z] <- int0_ub$value - int1_ub$value
+      LB[z] <- int0_lb$value - int1_lb$value
+
+
+      ## alternative method
+      UB2[z] <- sum(Y1 * w_zeta_inv[Dtr == 1], na.rm = TRUE) / n1 -
+                sum(Y0 * w_zeta[Dtr == 0], na.rm = TRUE) / n0
+      LB2[z] <- sum(Y1 * w_zeta[Dtr == 1], na.rm = TRUE) / n1 -
+                sum(Y0 * w_zeta_inv[Dtr == 0], na.rm = TRUE) / n0
+    }
+
   }
 
 
-  bounds <- tibble(zeta = zeta, LB = LB, UB = UB)
+  bounds <- tibble(zeta = zeta, LB = LB, UB = UB, UB2 = UB2, LB2 = LB2)
   return(bounds)
+}
+
+
+#' Compute Varinace of ATE Bounds via Full Bootstrap
+#' @importFrom dplyr pull
+#' @importFrom rlang !! sym
+attrition_bound_ate_boot_full <- function(
+  formula, varname_treat, Y, R, data, cbps, zeta, n_boot, is_discrete
+) {
+
+  n_obs <- nrow(data)
+  UB <- LB <- matrix(NA, nrow = n_boot, ncol = length(zeta))
+
+  for (i in 1:n_boot) {
+    ## resample data
+    id_boot <- sample(1:n_obs, size = n_obs, replace = TRUE)
+
+    Yboot <- Y[id_boot]
+    Rboot <- R[id_boot]
+    dat_boot <- data[id_boot, ]
+    Dtr   <- pull(dat_boot, !!sym(varname_treat))
+
+    ## reestimate  ascore
+    ascore_boot <- attrition_score(formula, varname_treat,
+                                   data = dat_boot, cbps)
+
+    ## estimate bounds
+    bounds <- attrition_bound_ate(Yboot, Dtr, Rboot, ascore_boot, zeta, is_discrete)
+    UB[i,] <- bounds$UB
+    LB[i,] <- bounds$LB
+  }
+
+  ## compute the variance
+  se_ub <- apply(UB, 2, sd)
+  se_lb <- apply(LB, 2, sd)
+  return(list(se_ub = se_ub, se_lb = se_lb))
 }
 
 #' Compute Variance of ATE Bound via Bootstrap
@@ -191,12 +269,16 @@ attrition_bound_ate_boot <- function(Yobs, Dtr, R, ascore, zeta, n_boot = 500) {
 
   n <- length(Dtr)
   LB <- UB <- matrix(NA, nrow = n_boot, ncol = length(zeta))
+  LB2 <- UB2 <- matrix(NA, nrow = n_boot, ncol = length(zeta))
+  Y1 <- Yobs[Dtr == 1]; Y0 <- Yobs[Dtr == 0]
+
+  y_min  <- min(Yobs, na.rm = TRUE)
+  y_max  <- max(Yobs, na.rm = TRUE)
 
   ## bootstrap -----------------------------------------------------------
   for (i in 1:n_boot) {
     ## re-sampled weights
     w_boot <- as.vector(rmultinom(1, n, prob = rep(1/n, n)))
-
     for (z in 1:length(zeta)) {
       ## compute weights
       w_zeta     <- R * (ascore + (1 - ascore) * zeta[z]) / ascore
@@ -215,34 +297,45 @@ attrition_bound_ate_boot <- function(Yobs, Dtr, R, ascore, zeta, n_boot = 500) {
         weights = w_zeta[Dtr == 1] * w_boot[Dtr == 1] / sum(w_boot[Dtr == 1]))
 
       ## compute the bound
-      int1_ub <- integrate(Pw1_ub, lower = min(Yobs, na.rm = TRUE),
-                                   upper = max(Yobs, na.rm = TRUE),
+      int1_ub <- integrate(Pw1_ub, lower = y_min, upper = y_max,
                                    stop.on.error = FALSE)
-      int0_ub <- integrate(Pw0_ub, lower = min(Yobs, na.rm = TRUE),
-                                   upper = max(Yobs, na.rm = TRUE),
+      int0_ub <- integrate(Pw0_ub, lower = y_min, upper = y_max,
                                    stop.on.error = FALSE)
 
-      int1_lb <- integrate(Pw1_lb, lower = min(Yobs, na.rm = TRUE),
-                                   upper = max(Yobs, na.rm = TRUE),
+      int1_lb <- integrate(Pw1_lb, lower = y_min, upper = y_max,
                                    stop.on.error = FALSE)
-      int0_lb <- integrate(Pw0_lb, lower = min(Yobs, na.rm = TRUE),
-                                   upper = max(Yobs, na.rm = TRUE),
+      int0_lb <- integrate(Pw0_lb, lower = y_min, upper = y_max,
                                    stop.on.error = FALSE)
 
       UB[i, z] <- int0_ub$value - int1_ub$value
       LB[i, z] <- int0_lb$value - int1_lb$value
+
+      ## alternative method
+      LB2[i, z] <- sum(Y1 * w_boot[Dtr == 1] * w_zeta_inv[Dtr == 1], na.rm = TRUE) /
+                  sum(w_boot[Dtr == 1]) -
+                sum(Y0 * w_boot[Dtr == 0] * w_zeta[Dtr == 0], na.rm = TRUE) /
+                  sum(w_boot[Dtr == 0])
+      UB2[i, z] <- sum(Y1 * w_boot[Dtr == 1] * w_zeta[Dtr == 1], na.rm = TRUE) /
+                  sum(w_boot[Dtr == 1]) -
+                sum(Y0 * w_boot[Dtr == 0] * w_zeta_inv[Dtr == 0], na.rm = TRUE) /
+                  sum(w_boot[Dtr == 0])
+
     }
   }
   ## end of bootstrap iterations -----------------------------------------
 
   ### compute the variance
-  sigma_ub <- sqrt(apply(UB, 2, var))
-  sigma_lb <- sqrt(apply(LB, 2, var))
+  sigma_ub <- apply(UB, 2, sd)
+  sigma_lb <- apply(LB, 2, sd)
 
-  return(list(se_ub = sigma_ub, se_lb = sigma_lb))
+  sigma_ub2 <- apply(UB2, 2, sd)
+  sigma_lb2 <- apply(LB2, 2, sd)
+
+
+  return(list(se_ub = sigma_ub, se_lb = sigma_lb,
+              se_ub2 = sigma_ub2, se_lb2 = sigma_lb2))
 
 }
-
 
 
 #' Estimate Bounds for QTE
