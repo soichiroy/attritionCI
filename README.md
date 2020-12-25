@@ -19,14 +19,14 @@ You can install the released version of attrition from
 [CRAN](https://CRAN.R-project.org) with:
 
 ``` r
-install.packages("attrition")
+install.packages("attritionCI")
 ```
 
 And the development version from [GitHub](https://github.com/) with:
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("soichiroy/attrition")
+devtools::install_github("soichiroy/attritionCI")
 ```
 
 ## Estimate Average Treatment Effect
@@ -34,7 +34,7 @@ devtools::install_github("soichiroy/attrition")
 ``` r
 # load packages
 require(tidyverse)
-require(attrition)
+require(attritionCI)
 require(knitr)
 ```
 
@@ -78,7 +78,7 @@ est_att2_ipw <- attrition(formula = fm2, data = dat_use, estimator = "ipw")
 ### Compute Sensitivity-Aware Confidence Intevals
 
 ``` r
-## compute bounds and confidence intervals 
+## compute bounds and confidence intervals
 set.seed(1234)
 zeta_vec <- c(1, 1.005, 1.01, 1.05, 1.1, 1.2)
 bd1 <- attrition_bound(fm1, data = dat_use, qoi = 'ate', zeta = zeta_vec,
@@ -91,7 +91,7 @@ bd2 <- attrition_bound(fm2, data = dat_use, qoi = 'ate', zeta = zeta_vec,
 bd_ate <- bind_rows(
   bd1 %>% mutate(effects = "Short-term Effect"),
   bd2 %>% mutate(effects = "Long-term Effects")
-) 
+)
 
 ggplot(bd_ate, aes(x = factor(zeta))) +
   geom_hline(yintercept = 0, color = 'indianred') +
@@ -99,7 +99,7 @@ ggplot(bd_ate, aes(x = factor(zeta))) +
   theme_bw() +
   ylim(-1, 1) +
   labs(x = "Sensitivity Parameter (zeta)", y = 'ATE') +
-  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme(plot.title = element_text(hjust = 0.5)) +
   facet_wrap(~effects)
 ```
 
@@ -122,19 +122,19 @@ bd_qte <- bind_rows(
   bd1_qte %>% mutate(effects = "Short-term Effect"),
   bd2_qte %>% mutate(effects = "Long-term Effect")
 ) %>% mutate(CI90_UB = pmin(CI90_UB, 1))
-  
 
-ggplot(bd_qte %>% filter(zeta != 1), aes(x = probs)) + 
-  geom_ribbon(aes(ymin = CI90_LB, ymax = CI90_UB, fill = factor(zeta)), alpha = 0.5) + 
-  geom_line(data = bd_qte %>% filter(zeta == 1), aes(x = probs, y = LB)) + 
-  geom_point(data = bd_qte %>% filter(zeta == 1), aes(x = probs, y = LB)) + 
-  geom_hline(yintercept = 0, linetype = 'dashed', color = 'indianred') + 
-  scale_fill_manual(values = c("gray20", "gray50", "gray80")) + 
-  ylim(-1, 1) + 
+
+ggplot(bd_qte %>% filter(zeta != 1), aes(x = probs)) +
+  geom_ribbon(aes(ymin = CI90_LB, ymax = CI90_UB, fill = factor(zeta)), alpha = 0.5) +
+  geom_line(data = bd_qte %>% filter(zeta == 1), aes(x = probs, y = LB)) +
+  geom_point(data = bd_qte %>% filter(zeta == 1), aes(x = probs, y = LB)) +
+  geom_hline(yintercept = 0, linetype = 'dashed', color = 'indianred') +
+  scale_fill_manual(values = c("gray20", "gray50", "gray80")) +
+  ylim(-1, 1) +
   theme_bw() +
-  theme(legend.position = 'bottom') + 
-  labs(y = "Quantile Treatment Effect", x = "Quantile", 
-       fill = 'Sensitivity parameters (zeta)') + 
+  theme(legend.position = 'bottom') +
+  labs(y = "Quantile Treatment Effect", x = "Quantile",
+       fill = 'Sensitivity parameters (zeta)') +
   facet_wrap(~effects)
 ```
 
