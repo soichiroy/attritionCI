@@ -1,5 +1,5 @@
-Package: attrition
-Title: Estimate causal effect under missing outcomes
+Package: attritionCI
+Title: Estimate causal effects under non-ignorable missing outcomes
 Version: 0.0.0.9000
 Authors@R:
     person(given = "Soichiro",

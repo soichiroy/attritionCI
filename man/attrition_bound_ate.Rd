@@ -4,7 +4,10 @@
 \alias{attrition_bound_ate}
 \title{Compute bounds on ATE}
 \usage{
-attrition_bound_ate(Yobs, Dtr, R, ascore, zeta)
+attrition_bound_ate(Yobs, Dtr, R, ascore, zeta, is_discrete)
+}
+\arguments{
+\item{is_discrete}{A boolean argument if the outcome is a discrete variable or not.}
 }
 \description{
 Compute bounds on ATE
