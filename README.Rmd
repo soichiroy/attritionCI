@@ -25,13 +25,7 @@ The goal of attrition is to ...
 
 ## Installation
 
-You can install the released version of attrition from [CRAN](https://CRAN.R-project.org) with:
-
-``` r
-install.packages("attritionCI")
-```
-
-And the development version from [GitHub](https://github.com/) with:
+You can install the development version from [GitHub](https://github.com/) with:
 
 ``` r
 # install.packages("devtools")
@@ -75,7 +69,7 @@ fm2 <- SV_w6 | D ~
 ```
 
 ```{r}
-## IPW estimator
+## IPW estimator based on the attrition score
 est_att1_ipw <- attrition(formula = fm1, data = dat_use, estimator = "ipw")
 est_att2_ipw <- attrition(formula = fm2, data = dat_use, estimator = "ipw")
 ```

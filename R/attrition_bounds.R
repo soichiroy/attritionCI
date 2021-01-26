@@ -74,9 +74,9 @@ attrition_bound <- function(
   ## estimate attrition score
   ## -------------------------------------- ##
   if (is.null(ascore)) {
-    ascore <- attrition_score(update(fm_X, R ~ .),
-                              varname_treat = var_treat,
-                              data = data, cbps)
+    ascore <- attrition_score(
+      update(fm_X, R ~ .), varname_treat = var_treat, data = data, cbps
+    )
   }
 
   ## -------------------------------------- ##
@@ -129,8 +129,6 @@ attrition_bound <- function(
                   CI95_UB = UB + qnorm(0.95) * se_ub) %>%
                 select(-se_lb, -se_ub)
     }
-
-
   } else {
     stop("Supported QOI is either ATE or QTE.")
   }

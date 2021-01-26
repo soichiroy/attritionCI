@@ -26,6 +26,7 @@
 #' @param cbps      A boolean argument. If \code{TRUE}, the covariate balancing propensity
 #'                  score (CBPS) is used to estimate the attrition score (and the propensity
 #'                  score when \code{est_ps = TRUE}). Otherwise, \code{glm} is used.
+#' @return A data.frame that contains treatment effect estimates as well as standard errors.
 attrition <- function(formula, data, estimator = 'dr', est_ps = FALSE, cbps = TRUE) {
   data <- as.data.frame(data)
 
